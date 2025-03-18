@@ -90,13 +90,16 @@ zstd.output\_compression\_dict  | ""      | PHP\_INI\_ALL
 
 ## Constant
 
-Name                           | Description
--------------------------------| -----------
-ZSTD\_COMPRESS\_LEVEL\_MIN     | Minimal compress level value
-ZSTD\_COMPRESS\_LEVEL\_MAX     | Maximal compress level value
-ZSTD\_COMPRESS\_LEVEL\_DEFAULT | Default compress level value
-LIBZSTD\_VERSION\_NUMBER       | libzstd version number
-LIBZSTD\_VERSION\_STRING       | libzstd version string
+| Name                           | Description                  |
+|--------------------------------|------------------------------|
+| ZSTD\_COMPRESS\_LEVEL\_MIN     | Minimal compress level value |
+| ZSTD\_COMPRESS\_LEVEL\_MAX     | Maximal compress level value |
+| ZSTD\_COMPRESS\_LEVEL\_DEFAULT | Default compress level value |
+| ZSTD_WINDOW_LOG_MIN            | Minimal window log value     |
+| ZSTD_WINDOW_LOG_MAX            | Maximal window log value     |
+| ZSTD_WINDOW_LOG_DEFAULT        | Default window log value     |
+| LIBZSTD\_VERSION\_NUMBER       | libzstd version number       |
+| LIBZSTD\_VERSION\_STRING       | libzstd version string       |
 
 ## Function
 
@@ -255,10 +258,11 @@ $data = \Zstd\compress('test');
 file_put_contents("compress.zstd:///path/to/data.zstd", $data);
 readfile("compress.zstd:///path/to/data.zstd");
 
-// Providing level of compression, when using streams 
+// Providing level of compression and window log value, when using streams 
 $context = stream_context_create([
     'zstd' => [
             'level' => ZSTD_COMPRESS_LEVEL_MIN,
+            'windowLog' => ZSTD_WINDOW_LOG_DEFAULT,
         ],
     ],
 );

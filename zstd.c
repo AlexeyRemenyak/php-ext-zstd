@@ -51,6 +51,18 @@
 #define ZSTD_CLEVEL_DEFAULT 3
 #endif
 
+#ifndef ZSTD_WINDOW_LOG_MIN
+#define ZSTD_WINDOW_LOG_MIN 10
+#endif
+
+#ifndef ZSTD_WINDOW_LOG_DEFAULT
+#define ZSTD_WINDOW_LOG_DEFAULT 27
+#endif
+
+#ifndef ZSTD_WINDOW_LOG_MAX
+#define ZSTD_WINDOW_LOG_MAX 31
+#endif
+
 #define DEFAULT_COMPRESS_LEVEL 3
 
 // zend_string_efree doesnt exist in PHP7.2, 20180731 is PHP 7.3
@@ -622,6 +634,7 @@ php_stream_zstd_opener(
 {
     php_zstd_stream_data *self;
     int level = ZSTD_CLEVEL_DEFAULT;
+    int windowLog = ZSTD_WINDOW_LOG_DEFAULT;
     int compress;
     ZSTD_CDict *cdict = NULL;
     ZSTD_DDict *ddict = NULL;
@@ -655,6 +668,12 @@ php_stream_zstd_opener(
         if (NULL != tmpzval) {
             level = zval_get_long(tmpzval);
         }
+
+        tmpzval = php_stream_context_get_option(context, "zstd", "windowLog");
+        if (NULL != tmpzval) {
+            windowLog = zval_get_long(tmpzval);
+        }
+
         tmpzval = php_stream_context_get_option(context, "zstd", "dict");
         if (NULL != tmpzval) {
             data = zval_get_string(tmpzval);
@@ -672,6 +691,20 @@ php_stream_zstd_opener(
                          "zstd: compression level (%d) must be less than %d",
                          level, ZSTD_maxCLevel());
         level = ZSTD_maxCLevel();
+    }
+
+    if (windowLog < ZSTD_WINDOW_LOG_MIN) {
+        php_error_docref(NULL, E_WARNING,
+                       "zstd: window log (%d) must be greater than %d",
+                       windowLog, ZSTD_WINDOW_LOG_MIN);
+        windowLog = ZSTD_WINDOW_LOG_MIN;
+    }
+
+    if (windowLog > ZSTD_WINDOW_LOG_MAX) {
+        php_error_docref(NULL, E_WARNING,
+                       "zstd: window log (%d) must be less than %d",
+                       windowLog, ZSTD_WINDOW_LOG_MAX);
+        windowLog = ZSTD_WINDOW_LOG_MAX;
     }
 
     self = ecalloc(sizeof(*self), 1);
@@ -696,6 +729,7 @@ php_stream_zstd_opener(
         ZSTD_CCtx_reset(self->cctx, ZSTD_reset_session_only);
         ZSTD_CCtx_refCDict(self->cctx, cdict);
         ZSTD_CCtx_setParameter(self->cctx, ZSTD_c_compressionLevel, level);
+        ZSTD_CCtx_setParameter(self->cctx, ZSTD_c_windowLog, windowLog);
 
         self->output.size = ZSTD_CStreamOutSize();
         self->output.dst  = emalloc(self->output.size);
@@ -703,29 +737,30 @@ php_stream_zstd_opener(
 
         return php_stream_alloc(&php_stream_zstd_write_ops, self, NULL, mode);
 
-    } else {
-        self->dctx = ZSTD_createDCtx();
-        if (!self->dctx) {
-            php_error_docref(NULL, E_WARNING,
-                             "zstd: compression context failed");
-            php_stream_close(self->stream);
-            efree(self);
-            return NULL;
-        }
-        self->cctx = NULL;
-        self->bufin = emalloc(self->sizein = ZSTD_DStreamInSize());
-        self->bufout = emalloc(self->sizeout = ZSTD_DStreamOutSize());
-        ZSTD_DCtx_reset(self->dctx, ZSTD_reset_session_only);
-        ZSTD_DCtx_refDDict(self->dctx, ddict);
-        self->input.src   = self->bufin;
-        self->input.pos   = 0;
-        self->input.size  = 0;
-        self->output.dst  = self->bufout;
-        self->output.pos  = 0;
-        self->output.size = 0;
-
-        return php_stream_alloc(&php_stream_zstd_read_ops, self, NULL, mode);
     }
+
+    self->dctx = ZSTD_createDCtx();
+    if (!self->dctx) {
+        php_error_docref(NULL, E_WARNING,
+                       "zstd: compression context failed");
+        php_stream_close(self->stream);
+        efree(self);
+        return NULL;
+    }
+    self->cctx = NULL;
+    self->bufin = emalloc(self->sizein = ZSTD_DStreamInSize());
+    self->bufout = emalloc(self->sizeout = ZSTD_DStreamOutSize());
+    ZSTD_DCtx_reset(self->dctx, ZSTD_reset_session_only);
+    ZSTD_DCtx_refDDict(self->dctx, ddict);
+    ZSTD_DCtx_setParameter(self->dctx, ZSTD_d_windowLogMax, windowLog);
+    self->input.src   = self->bufin;
+    self->input.pos   = 0;
+    self->input.size  = 0;
+    self->output.dst  = self->bufout;
+    self->output.pos  = 0;
+    self->output.size = 0;
+
+    return php_stream_alloc(&php_stream_zstd_read_ops, self, NULL, mode);
 }
 
 
@@ -1284,9 +1319,23 @@ ZEND_MINIT_FUNCTION(zstd)
     REGISTER_LONG_CONSTANT("ZSTD_COMPRESS_LEVEL_MIN",
                            1,
                            CONST_CS | CONST_PERSISTENT);
+
     REGISTER_LONG_CONSTANT("ZSTD_COMPRESS_LEVEL_MAX",
                            ZSTD_maxCLevel(),
                            CONST_CS | CONST_PERSISTENT);
+
+    REGISTER_LONG_CONSTANT("ZSTD_WINDOW_LOG_DEFAULT",
+                           ZSTD_WINDOW_LOG_DEFAULT,
+                           CONST_CS | CONST_PERSISTENT);
+
+    REGISTER_LONG_CONSTANT("ZSTD_WINDOW_LOG_MIN",
+                       ZSTD_WINDOW_LOG_MIN,
+                       CONST_CS | CONST_PERSISTENT);
+
+    REGISTER_LONG_CONSTANT("ZSTD_WINDOW_LOG_MAX",
+                       ZSTD_WINDOW_LOG_MAX,
+                       CONST_CS | CONST_PERSISTENT);
+
     REGISTER_LONG_CONSTANT("ZSTD_COMPRESS_LEVEL_DEFAULT",
                            DEFAULT_COMPRESS_LEVEL,
                            CONST_CS | CONST_PERSISTENT);
